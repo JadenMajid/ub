@@ -5,6 +5,13 @@ REPO="${UB_REPO:-JadenMajid/ub}"
 INSTALL_DIR="${UB_INSTALL_DIR:-$HOME/.local/bin}"
 BIN_NAME="ub"
 API_URL="https://api.github.com/repos/${REPO}/releases/latest"
+TMP_DIR=""
+
+cleanup() {
+  if [[ -n "${TMP_DIR:-}" && -d "${TMP_DIR:-}" ]]; then
+    rm -rf "$TMP_DIR"
+  fi
+}
 
 require_cmd() {
   if ! command -v "$1" >/dev/null 2>&1; then
@@ -129,9 +136,8 @@ download_release_binary() {
 
   echo "Selected asset: ${asset_url}"
 
-  local tmp_dir
-  tmp_dir="$(mktemp -d)"
-  trap 'rm -rf "$tmp_dir"' EXIT
+  TMP_DIR="$(mktemp -d)"
+  local tmp_dir="$TMP_DIR"
 
   local archive_path="$tmp_dir/asset"
   curl -fL "$asset_url" -o "$archive_path"
@@ -167,6 +173,29 @@ download_release_binary() {
 
   install -m 0755 "$found" "$target"
   echo "Installed ${BIN_NAME} to ${target}"
+}
+
+detect_managed_bin_dir() {
+  local installed_bin="$1"
+  local fallback_base
+  fallback_base="$(detect_base_dir)"
+  local fallback_dir="$fallback_base/ub/bin"
+
+  if [[ ! -x "$installed_bin" ]]; then
+    printf '%s\n' "$fallback_dir"
+    return 0
+  fi
+
+  local config_output
+  config_output="$("$installed_bin" config 2>/dev/null || true)"
+  local prefix
+  prefix="$(printf '%s\n' "$config_output" | awk -F': ' '/^UB_PREFIX:/ {print $2; exit}')"
+  if [[ -n "$prefix" ]]; then
+    printf '%s\n' "$prefix/bin"
+    return 0
+  fi
+
+  printf '%s\n' "$fallback_dir"
 }
 
 check_path_and_prompt() {
@@ -221,20 +250,19 @@ check_path_and_prompt() {
 }
 
 main() {
+  trap cleanup EXIT
   require_cmd curl
   require_cmd tar
 
   local os
   local arch
-  local base_dir
   local managed_bin_dir
   os="$(detect_os)"
   arch="$(detect_arch)"
-  base_dir="$(detect_base_dir)"
-  managed_bin_dir="$base_dir/ub/bin"
 
   echo "Installing ${BIN_NAME} (${os}/${arch})"
   download_release_binary "$os" "$arch"
+  managed_bin_dir="$(detect_managed_bin_dir "$INSTALL_DIR/$BIN_NAME")"
   check_path_and_prompt "$INSTALL_DIR" "$managed_bin_dir"
 
   echo "Done."

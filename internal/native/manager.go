@@ -787,10 +787,11 @@ func (j installJob) Run(ctx context.Context) error {
 	if err := extractTarGz(archive, j.manager.Paths.Cellar); err != nil {
 		return err
 	}
-	if err := j.manager.linkFormula(j.formula.Name, j.formula.Versions.Stable); err != nil {
+	linkedVersion, err := j.manager.linkFormula(j.formula.Name, j.formula.Versions.Stable)
+	if err != nil {
 		return err
 	}
-	j.reporter.printPoured(j.formula.Name, j.formula.Versions.Stable)
+	j.reporter.printPoured(j.formula.Name, linkedVersion)
 	return nil
 }
 
@@ -1578,15 +1579,61 @@ func isZipArchive(path string) (bool, error) {
 	return header[0] == 'P' && header[1] == 'K' && header[2] == 0x03 && header[3] == 0x04, nil
 }
 
-func (m *Manager) linkFormula(name, version string) error {
-	installDir := filepath.Join(m.Paths.Cellar, name, version)
+func (m *Manager) linkFormula(name, version string) (string, error) {
+	installDir, linkedVersion, err := resolveInstalledFormulaDir(m.Paths.Cellar, name, version)
+	if err != nil {
+		return "", err
+	}
 	if err := m.linkTree(installDir, m.Paths.Bin, "bin"); err != nil {
-		return err
+		return "", err
 	}
 	if err := m.linkTree(installDir, m.Paths.Sbin, "sbin"); err != nil {
-		return err
+		return "", err
 	}
-	return nil
+	return linkedVersion, nil
+}
+
+func resolveInstalledFormulaDir(cellar, name, version string) (string, string, error) {
+	formulaDir := filepath.Join(cellar, name)
+	exact := filepath.Join(formulaDir, version)
+	if info, err := os.Stat(exact); err == nil && info.IsDir() {
+		return exact, version, nil
+	}
+
+	entries, err := os.ReadDir(formulaDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", "", fmt.Errorf("formula %q is not installed", name)
+		}
+		return "", "", err
+	}
+
+	matches := make([]string, 0)
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		entryName := entry.Name()
+		if entryName == version || strings.HasPrefix(entryName, version+"_") {
+			matches = append(matches, entryName)
+		}
+	}
+
+	if len(matches) == 0 {
+		for _, entry := range entries {
+			if entry.IsDir() {
+				matches = append(matches, entry.Name())
+			}
+		}
+	}
+
+	if len(matches) == 0 {
+		return "", "", fmt.Errorf("formula %q has no installed versions", name)
+	}
+
+	sort.Strings(matches)
+	resolvedVersion := matches[len(matches)-1]
+	return filepath.Join(formulaDir, resolvedVersion), resolvedVersion, nil
 }
 
 func (m *Manager) linkTree(installDir, linkRoot, leaf string) error {
