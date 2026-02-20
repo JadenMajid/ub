@@ -1,0 +1,9 @@
+{
+  "name": "libfoo",
+  "version": "1.0.0",
+  "build": {
+    "steps": [
+      "echo building libfoo"
+    ]
+  }
+}
