@@ -4,7 +4,7 @@
 
 Inspired by Homebrew, ZeroBrew, and uv.
 
-`ub` does not invoke external package manager executables. It fetches formula metadata and bottles directly from upstream APIs.
+`ub` does not invoke external package manager executables. It fetches formula metadata and bottles directly from the homebrew API.
 
 Compatibility remapping defaults to:
 
