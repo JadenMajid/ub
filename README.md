@@ -25,8 +25,10 @@ The installer:
 
 - Detects your OS/architecture and downloads the latest release binary from GitHub Releases.
 - Installs `ub` to `${UB_INSTALL_DIR:-$HOME/.local/bin}`.
-- Checks whether `ub` and the installed ub binaries directory are already on your `PATH`.
+- Checks whether both `ub` executable directory and managed binaries directory (`.../ub/bin`) are already on your `PATH`.
 - Prompts with: `add ub binaries to path with ~/.zshrc?`
+
+Also, running `ub install ...` now ensures the managed binaries directory is added to `~/.zshrc` when it is missing from your shell `PATH`.
 
 ## Uninstall script
 

@@ -78,7 +78,67 @@ func runNativeInstall(manager *native.Manager, args []string) error {
 		return fmt.Errorf("install requires at least one formula")
 	}
 	manager.Workers = *jobs
-	return manager.Install(context.Background(), names)
+	if err := manager.Install(context.Background(), names); err != nil {
+		return err
+	}
+	if err := ensurePathEntryInZshrc(manager.Paths.Bin); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: failed to update ~/.zshrc PATH: %v\n", err)
+	}
+	return nil
+}
+
+func ensurePathEntryInZshrc(pathEntry string) error {
+	pathEntry = strings.TrimSpace(pathEntry)
+	if pathEntry == "" {
+		return nil
+	}
+	if pathContainsDir(os.Getenv("PATH"), pathEntry) {
+		return nil
+	}
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return err
+	}
+	zshrcPath := filepath.Join(home, ".zshrc")
+	line := fmt.Sprintf("export PATH=\"%s:$PATH\"", pathEntry)
+
+	content := ""
+	if data, readErr := os.ReadFile(zshrcPath); readErr == nil {
+		content = string(data)
+	} else if !os.IsNotExist(readErr) {
+		return readErr
+	}
+
+	if strings.Contains(content, line) {
+		return nil
+	}
+
+	f, err := os.OpenFile(zshrcPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	if content != "" && !strings.HasSuffix(content, "\n") {
+		if _, err := f.WriteString("\n"); err != nil {
+			return err
+		}
+	}
+	if _, err := f.WriteString(line + "\n"); err != nil {
+		return err
+	}
+	fmt.Printf("Added %s to PATH in ~/.zshrc (restart shell or run: source ~/.zshrc)\n", pathEntry)
+	return nil
+}
+
+func pathContainsDir(pathValue, dir string) bool {
+	for _, item := range strings.Split(pathValue, string(os.PathListSeparator)) {
+		if strings.TrimSpace(item) == dir {
+			return true
+		}
+	}
+	return false
 }
 
 func runNativeUninstall(manager *native.Manager, args []string) error {

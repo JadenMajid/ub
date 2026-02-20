@@ -35,6 +35,35 @@ detect_arch() {
   esac
 }
 
+detect_base_dir() {
+  if [[ -n "${UB_BASE_DIR:-}" ]]; then
+    printf '%s\n' "$UB_BASE_DIR"
+    return 0
+  fi
+
+  local home_dir
+  home_dir="${HOME:-$(cd ~ && pwd)}"
+  local candidates=()
+  case "$(uname -s)" in
+    Darwin)
+      candidates=("/opt" "/usr/local" "$home_dir")
+      ;;
+    *)
+      candidates=("$home_dir/.local" "$home_dir")
+      ;;
+  esac
+
+  local base
+  for base in "${candidates[@]}"; do
+    if mkdir -p "$base/ub" >/dev/null 2>&1; then
+      printf '%s\n' "$base"
+      return 0
+    fi
+  done
+
+  printf '%s\n' "$home_dir"
+}
+
 prompt_yes_no() {
   local prompt="$1"
   local default="$2"
@@ -142,6 +171,7 @@ download_release_binary() {
 
 check_path_and_prompt() {
   local target_dir="$1"
+  local managed_bin_dir="$2"
   local block_begin="# >>> ub path >>>"
   local block_end="# <<< ub path <<<"
 
@@ -160,13 +190,20 @@ check_path_and_prompt() {
       ;;
   esac
 
-  if [[ "$dir_on_path" == "yes" ]]; then
-    echo "Installed ub binaries directory is already on PATH: $target_dir"
+  local managed_on_path="no"
+  case ":$PATH:" in
+    *":$managed_bin_dir:"*)
+      managed_on_path="yes"
+      ;;
+  esac
+
+  if [[ "$dir_on_path" == "yes" && "$managed_on_path" == "yes" ]]; then
+    echo "Installed ub directories are already on PATH: $target_dir and $managed_bin_dir"
     return 0
   fi
 
   if prompt_yes_no "add ub binaries to path with ~/.zshrc? [y/N] " "N"; then
-    local line="export PATH=\"$target_dir:\$PATH\""
+    local line="export PATH=\"$target_dir:$managed_bin_dir:\$PATH\""
     if [[ -f "$HOME/.zshrc" ]] && (grep -Fq "$line" "$HOME/.zshrc" || grep -Fq "$block_begin" "$HOME/.zshrc"); then
       echo "~/.zshrc already contains the ub PATH export line."
     else
@@ -189,12 +226,16 @@ main() {
 
   local os
   local arch
+  local base_dir
+  local managed_bin_dir
   os="$(detect_os)"
   arch="$(detect_arch)"
+  base_dir="$(detect_base_dir)"
+  managed_bin_dir="$base_dir/ub/bin"
 
   echo "Installing ${BIN_NAME} (${os}/${arch})"
   download_release_binary "$os" "$arch"
-  check_path_and_prompt "$INSTALL_DIR"
+  check_path_and_prompt "$INSTALL_DIR" "$managed_bin_dir"
 
   echo "Done."
 }
